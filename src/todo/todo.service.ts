@@ -1,49 +1,63 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
-import { Todo } from './entities/todo.entity';
+import { Todo, TodoDocument } from './schemas/todo.schema';
 
 @Injectable()
 export class TodoService {
-  private todos: Todo[] = [
-    {id: 1, description: 'Piedra del Alma', done: false},
-    {id: 2, description: 'Piedra del Tiempo', done: false},
-    {id: 3, description: 'Piedra del Espacio', done: false}
-  ]
-  create(createTodoDto: CreateTodoDto): Todo {
-    const todo = new Todo();
-    todo.id = Math.max(...this.todos.map(todo => todo.id), 0) + 1;
-    todo.description = createTodoDto.description;
-    this.todos.push(todo)
-    return todo
+  constructor(@InjectModel(Todo.name) private todoModel: Model<TodoDocument>) {}
+
+  async create(createTodoDto: CreateTodoDto): Promise<Todo> {
+    try {
+      const createdTodo = new this.todoModel(createTodoDto);
+      return await createdTodo.save();
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 
-  findAll(): Todo[] {
-    return this.todos;
+  async findAll(): Promise<Todo[]> {
+    try {
+      return await this.todoModel.find().exec();
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 
-  findOne(id: number) {
-    const todo = this.todos.find(todo => todo.id === id);
-    if (!todo) throw new NotFoundException(`This ID #${id} does not exist`)
-    return todo;
+  async findOne(id: number): Promise<Todo> {
+    try {
+      const todo = await this.todoModel.findOne({ id }).exec();
+      if (!todo) {
+        throw new NotFoundException(`This ID #${id} does not exist`);
+      }
+      return todo;
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 
-  update(id: number, updateTodoDto: UpdateTodoDto): Todo {
-    const { done, description } = updateTodoDto;
-    const todo = this.findOne(id);
-
-    if (done !== undefined) todo.done = done;
-    if (description !== undefined) todo.description = description;
-
-    this.todos = this.todos.map( dbToodo => {
-      if (dbToodo.id === id) return todo;
-      return dbToodo;
-    })
-    return todo;
+  async update(id: number, updateTodoDto: UpdateTodoDto): Promise<Todo> {
+    try {
+      const existingTodo = await this.todoModel.findOneAndUpdate({ id }, updateTodoDto, { new: true }).exec();
+      if (!existingTodo) {
+        throw new NotFoundException(`This ID #${id} does not exist`);
+      }
+      return existingTodo;
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 
-  remove(id: number) {
-    this.findOne(id);
-    this.todos = this.todos.filter( todo => todo.id !== id);
+  async remove(id: number): Promise<void> {
+    try {
+      const result = await this.todoModel.deleteOne({ id }).exec();
+      if (result.deletedCount === 0) {
+        throw new NotFoundException(`This ID #${id} does not exist`);
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 }
